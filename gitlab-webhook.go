@@ -41,6 +41,7 @@ type Webhook struct {
 //ConfigRepository represents a repository from the config file
 type ConfigRepository struct {
   Name string
+	LocalPath string
   Commands []string
 }
 
@@ -97,7 +98,7 @@ func main() {
   }()
 
   //setting logging output
-  log.SetOutput(writer)
+  // log.SetOutput(writer)
 
   //setting handler
   http.HandleFunc("/", hookHandler)
@@ -135,6 +136,35 @@ func loadConfig(configFile string) Config {
   return config
 }
 
+func gitUpdate(repoName string, projectGitUrl string, localPath string) {
+
+	if _, err := os.Stat(localPath); os.IsNotExist(err) {
+		// cloneCmd := "/usr/local/bin/git clone " + projectGitUrl + " " + localPath
+		cloneCmd := "/usr/local/bin/git --version"
+		out, err := exec.Command(cloneCmd).Output()
+		if(err != nil) {
+			log.Println("Error cloning repo:")
+			log.Println(err)			
+		} else {
+			log.Println(string(out))
+			log.Println("Cloned Repo: " + repoName + "into " + localPath)
+		}
+	}
+
+	if _, err := os.Stat(localPath); err == nil {
+		resetCmd := "git -C " + localPath +" reset --hard"
+		err := exec.Command(resetCmd).Run()
+		pullCmd := "git -C " + localPath +" pull"
+		err = exec.Command(pullCmd).Run()
+		if(err != nil) {
+			log.Println("Error updating repo:")			
+			log.Println(err)
+		} else {
+			log.Println("Updated Repo: " + repoName)
+		}		
+	}
+}
+
 func hookHandler(w http.ResponseWriter, r *http.Request) {
   defer func() {
     if r := recover(); r != nil {
@@ -155,7 +185,10 @@ func hookHandler(w http.ResponseWriter, r *http.Request) {
   //find matching config for repository name
   for _, repo := range config.Repositories {
     if(repo.Name != hook.Repository.Name) { continue }
-    
+
+		//update repository
+		gitUpdate(repo.Name, hook.Repository.Url, repo.LocalPath)
+		
     //execute commands for repository
     for _, cmd := range repo.Commands {
       var command = exec.Command(cmd)
@@ -164,7 +197,7 @@ func hookHandler(w http.ResponseWriter, r *http.Request) {
         log.Println(err)
       } else {
         log.Println("Executed: " + cmd)
-	log.Println("Output: " + string(out))
+				log.Println("Output: " + string(out))
       }
     }
   }
