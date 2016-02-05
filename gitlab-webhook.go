@@ -140,7 +140,8 @@ func gitUpdate(repoName string, projectGitUrl string, localPath string) {
 
 	if _, err := os.Stat(localPath); os.IsNotExist(err) {
 		// cloneCmd := "/usr/local/bin/git clone " + projectGitUrl + " " + localPath
-		cloneCmd := "/usr/local/bin/git --version"
+		cloneCmd := "git --version"
+		log.Println("PATH = " + os.Getenv("PATH"))
 		out, err := exec.Command(cloneCmd).Output()
 		if(err != nil) {
 			log.Println("Error cloning repo:")
