@@ -98,7 +98,7 @@ func main() {
 	}()
 
 	//setting logging output
-	// log.SetOutput(writer)
+	log.SetOutput(writer)
 
 	//setting handler
 	http.HandleFunc("/", hookHandler)
@@ -136,21 +136,21 @@ func loadConfig(configFile string) Config {
 	return config
 }
 
+// pathExists returns whether the given file or directory exists or not
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true
+	}
+	if os.IsNotExist(err) {
+		return false
+	}
+	return true
+}
+
 func gitUpdate(repoName string, projectGitUrl string, localPath string) {
 
-	if _, err := os.Stat(localPath); os.IsNotExist(err) {
-		cloneCmd := exec.Command("git", "clone", projectGitUrl, localPath)
-		out, err := cloneCmd.Output()
-		if err != nil {
-			log.Println("Error cloning repo:")
-			log.Println(err)
-		} else {
-			log.Println(string(out))
-			log.Println("Cloned Repo: " + repoName + " into " + localPath)
-		}
-	}
-
-	if _, err := os.Stat(localPath); err == nil {
+	if pathExists(localPath) {
 		resetCmd := exec.Command("git", "-C", localPath, "reset", "--hard")
 		err := resetCmd.Run()
 		pullCmd := exec.Command("git", "-C", localPath, "pull")
@@ -160,6 +160,15 @@ func gitUpdate(repoName string, projectGitUrl string, localPath string) {
 			log.Println(err)
 		} else {
 			log.Println("Updated Repo: " + repoName)
+		}
+	} else {
+		cloneCmd := exec.Command("git", "clone", projectGitUrl, localPath)
+		err := cloneCmd.Run()
+		if err != nil {
+			log.Println("Error cloning repo:")
+			log.Println(err)
+		} else {
+			log.Println("Cloned Repo: " + repoName + " into " + localPath)
 		}
 	}
 }
