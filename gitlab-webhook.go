@@ -1,205 +1,205 @@
 package main
 
-import(
-  "net/http"
-  "encoding/json"
-  "io/ioutil"
-  "os/exec"
-  "os"
-  "log"
-  "errors"
-  "strconv"
-  "os/signal"
-  "syscall"
+import (
+	"encoding/json"
+	"errors"
+	"io/ioutil"
+	"log"
+	"net/http"
+	"os"
+	"os/exec"
+	"os/signal"
+	"strconv"
+	"syscall"
 )
 
 //GitlabRepository represents repository information from the webhook
 type GitlabRepository struct {
-  Name, Url, Description, Home string
+	Name, Url, Description, Home string
 }
 
 //Commit represents commit information from the webhook
 type Commit struct {
-  Id, Message, Timestamp, Url string
-  Author Author
+	Id, Message, Timestamp, Url string
+	Author                      Author
 }
 
 //Author represents author information from the webhook
 type Author struct {
-  Name, Email string
+	Name, Email string
 }
 
 //Webhook represents push information from the webhook
 type Webhook struct {
-  Before, After, Ref, User_name string
-  User_id, Project_id int
-  Repository GitlabRepository
-  Commits []Commit
-  Total_commits_count int
+	Before, After, Ref, User_name string
+	User_id, Project_id           int
+	Repository                    GitlabRepository
+	Commits                       []Commit
+	Total_commits_count           int
 }
 
 //ConfigRepository represents a repository from the config file
 type ConfigRepository struct {
-  Name string
+	Name      string
 	LocalPath string
-  Commands []string
+	Commands  []string
 }
 
 //Config represents the config file
 type Config struct {
-  Logfile string
-  Address string
-  Port int64
-  Repositories []ConfigRepository
+	Logfile      string
+	Address      string
+	Port         int64
+	Repositories []ConfigRepository
 }
 
 func PanicIf(err error, what ...string) {
-  if(err != nil) {
-    if(len(what) == 0) {
-      panic(err)
-    }
-    
-    panic(errors.New(err.Error() + what[0]))
-  }
+	if err != nil {
+		if len(what) == 0 {
+			panic(err)
+		}
+
+		panic(errors.New(err.Error() + what[0]))
+	}
 }
 
 var config Config
 var configFile string
 
 func main() {
-  args := os.Args
+	args := os.Args
 
-  sigc := make(chan os.Signal, 1)
-  signal.Notify(sigc, syscall.SIGHUP)
+	sigc := make(chan os.Signal, 1)
+	signal.Notify(sigc, syscall.SIGHUP)
 
-  go func() {
-    <-sigc
-    config = loadConfig(configFile)
-    log.Println("config reloaded")
-  }()
-  
-  //if we have a "real" argument we take this as conf path to the config file
-  if(len(args) > 1) {
-    configFile = args[1]
-  } else {
-    configFile = "config.json"
-  }
-  
-  //load config
-  config := loadConfig(configFile)
+	go func() {
+		<-sigc
+		config = loadConfig(configFile)
+		log.Println("config reloaded")
+	}()
 
-  //open log file
-  writer, err := os.OpenFile(config.Logfile, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0666)
-  PanicIf(err)
-  
-  //close logfile on exit
-  defer func() {
-    writer.Close()
-  }()
+	//if we have a "real" argument we take this as conf path to the config file
+	if len(args) > 1 {
+		configFile = args[1]
+	} else {
+		configFile = "config.json"
+	}
 
-  //setting logging output
-  // log.SetOutput(writer)
+	//load config
+	config := loadConfig(configFile)
 
-  //setting handler
-  http.HandleFunc("/", hookHandler)
+	//open log file
+	writer, err := os.OpenFile(config.Logfile, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0666)
+	PanicIf(err)
 
-  address := config.Address + ":" + strconv.FormatInt(config.Port, 10)
+	//close logfile on exit
+	defer func() {
+		writer.Close()
+	}()
 
-  log.Println("Listening on " + address)
-  
-  //starting server
-  err = http.ListenAndServe(address, nil)
-  if(err != nil) {
-    log.Println(err)
-  }
+	//setting logging output
+	// log.SetOutput(writer)
+
+	//setting handler
+	http.HandleFunc("/", hookHandler)
+
+	address := config.Address + ":" + strconv.FormatInt(config.Port, 10)
+
+	log.Println("Listening on " + address)
+
+	//starting server
+	err = http.ListenAndServe(address, nil)
+	if err != nil {
+		log.Println(err)
+	}
 }
 
 func loadConfig(configFile string) Config {
-  var file, err = os.Open(configFile)
-  PanicIf(err)
+	var file, err = os.Open(configFile)
+	PanicIf(err)
 
-  // close file on exit and check for its returned error
-  defer func() {
-      err := file.Close()
-      PanicIf(err)
-  }()
+	// close file on exit and check for its returned error
+	defer func() {
+		err := file.Close()
+		PanicIf(err)
+	}()
 
-  buffer := make([]byte, 1024)
-  count := 0
+	buffer := make([]byte, 1024)
+	count := 0
 
-  count, err = file.Read(buffer)
-  PanicIf(err)
+	count, err = file.Read(buffer)
+	PanicIf(err)
 
-  err = json.Unmarshal(buffer[:count], &config)
-  PanicIf(err)
+	err = json.Unmarshal(buffer[:count], &config)
+	PanicIf(err)
 
-  return config
+	return config
 }
 
 func gitUpdate(repoName string, projectGitUrl string, localPath string) {
 
 	if _, err := os.Stat(localPath); os.IsNotExist(err) {
-		// cloneCmd := "/usr/local/bin/git clone " + projectGitUrl + " " + localPath
-		cloneCmd := "git --version"
-		log.Println("PATH = " + os.Getenv("PATH"))
-		out, err := exec.Command(cloneCmd).Output()
-		if(err != nil) {
+		cloneCmd := exec.Command("git", "clone", projectGitUrl, localPath)
+		out, err := cloneCmd.Output()
+		if err != nil {
 			log.Println("Error cloning repo:")
-			log.Println(err)			
+			log.Println(err)
 		} else {
 			log.Println(string(out))
-			log.Println("Cloned Repo: " + repoName + "into " + localPath)
+			log.Println("Cloned Repo: " + repoName + " into " + localPath)
 		}
 	}
 
 	if _, err := os.Stat(localPath); err == nil {
-		resetCmd := "git -C " + localPath +" reset --hard"
-		err := exec.Command(resetCmd).Run()
-		pullCmd := "git -C " + localPath +" pull"
-		err = exec.Command(pullCmd).Run()
-		if(err != nil) {
-			log.Println("Error updating repo:")			
+		resetCmd := exec.Command("git", "-C", localPath, "reset", "--hard")
+		err := resetCmd.Run()
+		pullCmd := exec.Command("git", "-C", localPath, "pull")
+		err = pullCmd.Run()
+		if err != nil {
+			log.Println("Error updating repo:")
 			log.Println(err)
 		} else {
 			log.Println("Updated Repo: " + repoName)
-		}		
+		}
 	}
 }
 
 func hookHandler(w http.ResponseWriter, r *http.Request) {
-  defer func() {
-    if r := recover(); r != nil {
-      log.Println(r)
-    }
-  }()
-  
-  var hook Webhook
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println(r)
+		}
+	}()
 
-  //read request body
-  var data, err = ioutil.ReadAll(r.Body)
-  PanicIf(err, "while reading request")
+	var hook Webhook
 
-  //unmarshal request body
-  err = json.Unmarshal(data, &hook)
-  PanicIf(err, "while unmarshaling request")
+	//read request body
+	var data, err = ioutil.ReadAll(r.Body)
+	PanicIf(err, "while reading request")
 
-  //find matching config for repository name
-  for _, repo := range config.Repositories {
-    if(repo.Name != hook.Repository.Name) { continue }
+	//unmarshal request body
+	err = json.Unmarshal(data, &hook)
+	PanicIf(err, "while unmarshaling request")
+
+	//find matching config for repository name
+	for _, repo := range config.Repositories {
+		if repo.Name != hook.Repository.Name {
+			continue
+		}
 
 		//update repository
 		gitUpdate(repo.Name, hook.Repository.Url, repo.LocalPath)
-		
-    //execute commands for repository
-    for _, cmd := range repo.Commands {
-      var command = exec.Command(cmd)
-      out, err := command.Output()
-      if(err != nil) {
-        log.Println(err)
-      } else {
-        log.Println("Executed: " + cmd)
+
+		//execute commands for repository
+		for _, cmd := range repo.Commands {
+			var command = exec.Command(cmd)
+			out, err := command.Output()
+			if err != nil {
+				log.Println(err)
+			} else {
+				log.Println("Executed: " + cmd)
 				log.Println("Output: " + string(out))
-      }
-    }
-  }
+			}
+		}
+	}
 }
